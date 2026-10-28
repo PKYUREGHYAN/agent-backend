@@ -132,15 +132,19 @@ def create_mask(
     from sam2.sam2_image_predictor import SAM2ImagePredictor
     import sam2
 
-    sam2_root = Path(sam2.__file__).resolve().parent
-    config_path = (
-        sam2_root / "configs" / "sam2.1" / "sam2.1_hiera_t.yaml"
+    # Hydra expects a package-relative config id, not an absolute filesystem path.
+    config_name = "configs/sam2.1/sam2.1_hiera_t.yaml"
+    config_file = (
+        Path(sam2.__file__).resolve().parent
+        / "configs"
+        / "sam2.1"
+        / "sam2.1_hiera_t.yaml"
     )
-    if not config_path.is_file():
-        raise FileNotFoundError(f"SAM2 config not found: {config_path}")
+    if not config_file.is_file():
+        raise FileNotFoundError(f"SAM2 config not found: {config_file}")
 
     model = build_sam2(
-        str(config_path),
+        config_name,
         str(CHECKPOINT),
         device="cpu",
     )
