@@ -33,11 +33,16 @@ lama_output/
 .DS_Store
 Thumbs.db
 
-# Grounded SAM virtual environment
+# Local AI runtimes, virtual environments, and downloaded checkpoints
+iopaint/
+grounded_sam/.venv/
+grounded_sam/Include/
 grounded_sam/Lib/
 grounded_sam/Scripts/
-grounded_sam/Include/
+grounded_sam/share/
 grounded_sam/pyvenv.cfg
-grounded_sam/checkpoints
+grounded_sam/checkpoints/
 
-./iopaint
+# SQLite runtime sidecar files
+*.sqlite-shm
+*.sqlite-wal
