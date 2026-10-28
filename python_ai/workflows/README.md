@@ -1,6 +1,8 @@
 # ComfyUI workflow setup
 
-ComfyUI is optional and is not bundled with the Python service. On a GPU-backed machine:
+ComfyUI is optional and is not bundled with the Python service. Without it, wall repair and large masks fall back to local IOPaint + LaMa on CPU.
+
+On a GPU-backed machine:
 
 1. Build a ComfyUI inpainting workflow using either SDXL Inpaint or FLUX Fill.
 2. Export it with **Save (API Format)** into the path configured by `COMFYUI_WORKFLOW_PATH`.

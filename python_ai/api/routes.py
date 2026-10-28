@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from services.command_service import understand_command
-from services.comfyui_service import get_comfyui_status
+from services.comfyui_service import get_large_inpaint_status
 from services.image_service import ImageProcessingError, detect_objects_in_image, get_capabilities, process_image
 from services.ollama_service import get_ollama_status, plan_custom_removal
 
@@ -37,7 +37,7 @@ def capabilities():
         "success": True,
         **get_capabilities(),
         "vision_ai": get_ollama_status(),
-        "large_inpaint": get_comfyui_status(),
+        "large_inpaint": get_large_inpaint_status(),
     }
 
 

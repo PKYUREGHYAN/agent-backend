@@ -29,14 +29,20 @@ class ImageServiceTests(unittest.TestCase):
         self.assertTrue(result["processed_image"].startswith("data:image/jpeg;base64,"))
         self.assertGreaterEqual(lama.call_count, 1)
 
+    @patch("services.image_service.lama_inpaint")
+    @patch("services.image_service.lama_status", return_value={"available": True, "reason": ""})
     @patch("services.image_service.comfy_inpaint")
     @patch("services.image_service.get_comfyui_status", return_value={"available": False, "reason": "ComfyUI unavailable"})
     @patch("services.image_service.make_mask", return_value=(object(), 0.2))
     @patch("services.image_service.review_target", return_value={"allow": True})
-    def test_large_mask_fails_safely_without_comfyui(self, _review, _mask, _status, comfy):
-        with self.assertRaisesRegex(ImageProcessingError, "մեծ է LaMa-ի համար"):
-            process_image(self.image_data, "REMOVE_PEOPLE")
+    def test_large_mask_falls_back_to_lama_without_comfyui(
+        self, _review, _mask, _status, comfy, _lama_status, lama
+    ):
+        lama.return_value = self.image.copy()
+        result = process_image(self.image_data, "REMOVE_PEOPLE")
+        self.assertEqual(result["engine"], "iopaint-lama")
         comfy.assert_not_called()
+        self.assertGreaterEqual(lama.call_count, 1)
 
     @patch("services.image_service.lama_inpaint")
     @patch("services.image_service.lama_status", return_value={"available": True, "reason": ""})

@@ -52,6 +52,30 @@ def get_comfyui_status() -> dict[str, str | bool]:
     }
 
 
+def get_large_inpaint_status() -> dict[str, str | bool]:
+    """Prefer ComfyUI; otherwise expose local LaMa as a CPU fallback."""
+    comfy = get_comfyui_status()
+    if comfy["available"]:
+        return comfy
+
+    from services.lama_service import status as lama_status
+
+    lama = lama_status()
+    if lama["available"]:
+        return {
+            "available": True,
+            "engine": "iopaint-lama",
+            "reason": "",
+            "fallback": True,
+        }
+
+    return {
+        "available": False,
+        "engine": str(comfy.get("engine") or "comfyui-sdxl-or-flux-fill"),
+        "reason": str(comfy.get("reason") or lama.get("reason") or ""),
+    }
+
+
 def _upload_image(image: Image.Image, name: str, image_format: str) -> str:
     output = BytesIO()
     image.save(output, format=image_format)

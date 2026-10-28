@@ -8,7 +8,11 @@ import io
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
-from services.comfyui_service import get_comfyui_status, inpaint as comfy_inpaint
+from services.comfyui_service import (
+    get_comfyui_status,
+    get_large_inpaint_status,
+    inpaint as comfy_inpaint,
+)
 from services.detection_service import detect_objects, make_mask, model_status as detection_status
 from services.image_service_errors import ImageProcessingError
 from services.lama_service import inpaint as lama_inpaint, status as lama_status
@@ -59,16 +63,17 @@ def get_capabilities() -> dict:
     detector = detection_status()
     lama = lama_status()
     comfy = get_comfyui_status()
+    large_inpaint = get_large_inpaint_status()
     realesrgan = realesrgan_status()
     runtime = get_runtime_profile()
 
     supported = set(SUPPORTED_BASIC)
     unavailable: dict[str, str] = {
-        "REPAIR_WALLS": str(comfy["reason"]),
+        "REPAIR_WALLS": str(large_inpaint["reason"] or comfy["reason"]),
         "UPSCALE_IMAGE": str(realesrgan["reason"]),
         "HOME_STAGING": "Home staging-ի workflow-ը կարգավորված չէ",
         "REMOVE_WATERMARK": "Այս գործողությունը չի աջակցվում",
-        "ADD_TABLECLOTH": str(comfy["reason"]),
+        "ADD_TABLECLOTH": str(large_inpaint["reason"] or comfy["reason"]),
         "REMOVE_FURNITURE": "Ընտրեք կոնկրետ գույք՝ աթոռ, սեղան, բազմոց կամ մահճակալ",
     }
     removal_ready = (
@@ -119,7 +124,7 @@ def get_capabilities() -> dict:
         "unavailable_commands": unavailable,
         "engines": {
             "small_object_inpaint": small_inpaint,
-            "large_area_inpaint": comfy,
+            "large_area_inpaint": large_inpaint,
             "upscale": realesrgan,
         },
         "runtime": runtime,
@@ -246,12 +251,14 @@ def _inpaint_once(image: Image.Image, command: str, target: str | None, selected
         return lama_inpaint(image, mask), "iopaint-lama"
 
     if mask_fraction > LAMA_MAX_MASK_AREA:
-        if not comfy_ready:
-            raise ImageProcessingError(
-                "Հատվածը մեծ է LaMa-ի համար, իսկ ComfyUI + inpaint workflow-ը հասանելի չէ։ "
-                "Նկարը չի փոփոխվել։"
-            )
-        return comfy_inpaint(image, mask, positive, negative), "comfyui-inpaint"
+        if comfy_ready:
+            return comfy_inpaint(image, mask, positive, negative), "comfyui-inpaint"
+        # CPU servers without ComfyUI: fall back to LaMa instead of hard-failing.
+        if lama_status()["available"]:
+            return lama_inpaint(image, mask), "iopaint-lama"
+        raise ImageProcessingError(
+            "Հատվածը մեծ է, և ոչ ComfyUI, ոչ LaMa inpaint հասանելի չէ։ Նկարը չի փոփոխվել։"
+        )
 
     if not lama_status()["available"]:
         raise ImageProcessingError("IOPaint + LaMa-ն հասանելի չէ. նկարը չի փոփոխվել։")
