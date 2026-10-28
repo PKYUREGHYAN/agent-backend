@@ -4,7 +4,8 @@ const router = express.Router();
 
 const AI_BASE_URL = process.env.PYTHON_AI_URL || "http://127.0.0.1:8000";
 
-const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS || 120000);
+// CPU hosts may need several minutes for DINO/SAM2 + LaMa.
+const AI_TIMEOUT_MS = Number(process.env.PYTHON_AI_TIMEOUT_MS || 600000);
 
 async function forwardToPython(req, res) {
     const controller = new AbortController();

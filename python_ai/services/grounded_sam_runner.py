@@ -24,6 +24,11 @@ DINO_MODEL_ID = os.getenv(
     "IDEA-Research/grounding-dino-tiny",
 )
 
+# Keep CPU inference predictable on 1-vCPU droplets.
+torch.set_num_threads(max(1, int(os.getenv("TORCH_NUM_THREADS", "1"))))
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 
 def detect_objects(image_path: Path, target: str) -> None:
     """Detect matching objects and return their boxes as JSON."""

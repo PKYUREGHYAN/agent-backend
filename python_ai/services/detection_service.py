@@ -135,8 +135,15 @@ def _prepare_image(
     return rgb_image, scale
 
 
-def _run_runner(arguments: list[str], timeout: int = 600) -> str:
+def _run_runner(arguments: list[str], timeout: int = 900) -> str:
     """Execute the dedicated Python runner and return its standard output."""
+    env = os.environ.copy()
+    env.update({
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "TORCH_NUM_THREADS": "1",
+    })
     try:
         result = subprocess.run(
             [
@@ -149,6 +156,7 @@ def _run_runner(arguments: list[str], timeout: int = 600) -> str:
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except subprocess.TimeoutExpired as error:
         raise ImageProcessingError(
