@@ -4,14 +4,25 @@ const nodemailer = require("nodemailer");
 function getMailTransport() {
     const user = String(process.env.SMTP_USER || process.env.SUPER_ADMIN_EMAIL || "").trim();
     const pass = String(process.env.SMTP_PASS || "").trim();
+    const host = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
+    const port = Number(process.env.SMTP_PORT || 587);
 
     if (!user || !pass) {
         throw new Error("SMTP-ն կարգավորված չէ");
     }
 
+    // DigitalOcean often blocks outbound 587/465 — keep timeouts short so UI does not hang.
     return nodemailer.createTransport({
-        service: "gmail",
+        host,
+        port,
+        secure: port === 465,
         auth: { user, pass },
+        connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 5000),
+        greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 5000),
+        socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 10000),
+        tls: {
+            servername: host,
+        },
     });
 }
 
