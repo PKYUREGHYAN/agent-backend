@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+Pillow
+numpy
+psutil
+opencv-python
+torch
+torchvision
+transformers
+sam2
+iopaint

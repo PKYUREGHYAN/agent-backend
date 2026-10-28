@@ -1,0 +1,4 @@
+# Optional only. Install into the same Python environment as the API.
+# Check Torch/TorchVision compatibility before installing BasicSR.
+realesrgan
+basicsr

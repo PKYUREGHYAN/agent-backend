@@ -1,0 +1,146 @@
+"""Open-vocabulary detection and SAM2 mask generation for one requested target."""
+
+from __future__ import annotations
+
+import gc
+import importlib.util
+import os
+from pathlib import Path
+
+from PIL import Image
+
+from services.config import DINO_MODEL_ID, SAM2_CHECKPOINT
+from services.image_service_errors import ImageProcessingError
+from services.runtime_service import get_runtime_profile, require_removal_memory
+
+
+_TARGET_PROMPTS = {
+    "REMOVE_PEOPLE": "person . people .",
+    "REMOVE_CLOTHES": "clothes . clothing . shirt . trousers .",
+    "REMOVE_BOTTLES": "bottle . water bottle . glass bottle .",
+    "REMOVE_TRASH": "trash . rubbish . garbage .",
+    "REMOVE_TABLE_CLUTTER": "cup . plate . book . paper . remote control . small item .",
+    "REMOVE_FURNITURE": "chair . armchair . sofa . table .",
+    "REPAIR_WALLS": "crack in wall . hole in wall . peeling paint . damaged plaster .",
+    "REMOVE_CUSTOM_OBJECT": "object .",
+}
+_MAX_MASK_AREA = {
+    "REMOVE_PEOPLE": 0.35,
+    "REMOVE_CLOTHES": 0.16,
+    "REMOVE_BOTTLES": 0.12,
+    "REMOVE_TRASH": 0.15,
+    "REMOVE_TABLE_CLUTTER": 0.12,
+    "REMOVE_FURNITURE": 0.20,
+    "REPAIR_WALLS": 0.28,
+    "REMOVE_CUSTOM_OBJECT": 0.10,
+}
+
+
+def model_status() -> dict[str, str | bool]:
+    try:
+        sam2_spec = importlib.util.find_spec("sam2")
+        transformer_spec = importlib.util.find_spec("transformers")
+        if not sam2_spec or not transformer_spec or not sam2_spec.submodule_search_locations:
+            return {"available": False, "reason": "DINO կամ SAM2 dependency-ն հասանելի չէ"}
+        sam2_root = Path(next(iter(sam2_spec.submodule_search_locations)))
+        config = sam2_root / "configs/sam2.1/sam2.1_hiera_t.yaml"
+        if not SAM2_CHECKPOINT.is_file() or not config.is_file():
+            return {"available": False, "reason": "SAM2 checkpoint/config-ը չի գտնվել"}
+        hf_home = Path(os.getenv("HF_HOME", Path.home() / ".cache/huggingface"))
+        dino_cache = hf_home / "hub/models--IDEA-Research--grounding-dino-tiny"
+        if not dino_cache.is_dir() or not any((dino_cache / "snapshots").glob("*")):
+            return {"available": False, "reason": "Grounding DINO model-ը դեռ cache արված չէ"}
+    except Exception:
+        return {"available": False, "reason": "DINO կամ SAM2 dependency/model-ը հասանելի չէ"}
+    return {"available": True, "reason": ""}
+
+
+def make_mask(image: Image.Image, command: str, target: str | None = None):
+    if command not in _TARGET_PROMPTS:
+        raise ImageProcessingError("Այս հրամանի համար օբյեկտի mask չի սահմանված")
+    if command == "REMOVE_CUSTOM_OBJECT":
+        if not target or not target.replace(" ", "").replace("-", "").isalpha():
+            raise ImageProcessingError("Թիրախը անվավեր է. նկարը չի փոխվել։")
+        prompt = f"{target} ."
+    else:
+        prompt = _TARGET_PROMPTS[command]
+
+    try:
+        profile = require_removal_memory()
+    except MemoryError as error:
+        raise ImageProcessingError(str(error)) from error
+
+    import cv2
+    import numpy as np
+    import torch
+    from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+
+    try:
+        original_size = image.size
+        max_dimension = int(profile["detection_max_dimension"])
+        scale = min(1.0, max_dimension / max(image.size))
+        if scale < 1.0:
+            work_size = (
+                max(2, round(image.width * scale)),
+                max(2, round(image.height * scale)),
+            )
+            work_image = image.resize(work_size, Image.Resampling.LANCZOS)
+        else:
+            work_image = image
+
+        processor = AutoProcessor.from_pretrained(DINO_MODEL_ID, local_files_only=True)
+        detector = AutoModelForZeroShotObjectDetection.from_pretrained(
+            DINO_MODEL_ID, local_files_only=True
+        ).to("cpu").eval()
+        inputs = processor(images=work_image, text=prompt, return_tensors="pt")
+        with torch.inference_mode():
+            outputs = detector(**inputs)
+        detections = processor.post_process_grounded_object_detection(
+            outputs,
+            inputs["input_ids"],
+            box_threshold=0.38,
+            target_sizes=[work_image.size[::-1]],
+        )[0]
+        boxes = detections["boxes"].cpu()
+        if len(boxes) == 0:
+            raise ImageProcessingError("AI-ն ընտրված օբյեկտը նկարում չի գտել։ Նկարը չի փոխվել։")
+        del outputs, inputs, detections, detector, processor
+        gc.collect()
+
+        import cv2
+        import sam2
+        from sam2.build_sam import build_sam2
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+        config = Path(sam2.__file__).parent / "configs/sam2.1/sam2.1_hiera_t.yaml"
+        sam_model = build_sam2(str(config), str(SAM2_CHECKPOINT), device="cpu")
+        predictor = SAM2ImagePredictor(sam_model)
+        image_rgb = np.asarray(work_image.convert("RGB"))
+        predictor.set_image(image_rgb)
+        combined = np.zeros(image_rgb.shape[:2], dtype=np.uint8)
+        max_area = _MAX_MASK_AREA[command]
+        accepted = 0
+        for box in boxes:
+            masks, _, _ = predictor.predict(box=box.numpy(), multimask_output=False)
+            candidate = (masks[0] > 0).astype(np.uint8)
+            combined_candidate = np.maximum(combined, candidate)
+            if candidate.mean() <= max_area and combined_candidate.mean() <= max_area:
+                combined = combined_candidate
+                accepted += 1
+        del predictor, sam_model
+        gc.collect()
+        if accepted == 0 or not combined.any():
+            raise ImageProcessingError("Mask-ը չափազանց մեծ կամ անորոշ է։ Նկարը չի փոփոխվել։")
+        if work_image.size != original_size:
+            combined = cv2.resize(
+                combined,
+                original_size,
+                interpolation=cv2.INTER_NEAREST,
+            )
+        return combined, float(combined.mean())
+    except MemoryError as error:
+        raise ImageProcessingError(str(error)) from error
+    except ImageProcessingError:
+        raise
+    except Exception as error:
+        raise ImageProcessingError(f"DINO/SAM2 mask-ի ստեղծումը ձախողվեց՝ {error}") from error

@@ -1,0 +1,55 @@
+"""Small-mask inpainting through the installed IOPaint LaMa model."""
+
+import importlib.util
+from pathlib import Path
+
+from PIL import Image
+
+from services.runtime_service import get_runtime_profile
+
+
+def status() -> dict[str, str | bool]:
+    try:
+        package = importlib.util.find_spec("iopaint")
+        if not package or not package.submodule_search_locations:
+            return {"available": False, "reason": "IOPaint-ը տեղադրված չէ"}
+        package_root = Path(next(iter(package.submodule_search_locations)))
+        if not (package_root / "model/lama.py").is_file() or not (package_root / "schema.py").is_file():
+            return {"available": False, "reason": "IOPaint/LaMa-ն տեղադրված չէ"}
+    except Exception:
+        return {"available": False, "reason": "IOPaint/LaMa-ն տեղադրված չէ"}
+    return {"available": True, "reason": ""}
+
+
+def inpaint(image: Image.Image, mask):
+    import cv2
+    import numpy as np
+    import torch
+    from iopaint.model.lama import LaMa
+    from iopaint.schema import InpaintRequest
+
+    torch.set_num_threads(1)
+    model = LaMa(device="cpu")
+    image_rgb = np.asarray(image.convert("RGB"))
+    mask_u8 = (np.asarray(mask) > 0).astype(np.uint8) * 255
+    try:
+        max_dimension = int(get_runtime_profile()["lama_max_dimension"])
+        scale = min(1.0, max_dimension / max(image.size))
+        if scale < 1.0:
+            work_size = (
+                max(8, round(image.width * scale / 8) * 8),
+                max(8, round(image.height * scale / 8) * 8),
+            )
+            work_image = cv2.resize(image_rgb, work_size, interpolation=cv2.INTER_AREA)
+            work_mask = cv2.resize(mask_u8, work_size, interpolation=cv2.INTER_NEAREST)
+        else:
+            work_image = image_rgb
+            work_mask = mask_u8
+        result_bgr = model.forward(work_image, work_mask, InpaintRequest(model="lama"))
+        result_rgb = cv2.cvtColor(np.asarray(result_bgr, dtype=np.uint8), cv2.COLOR_BGR2RGB)
+        result = Image.fromarray(result_rgb)
+        if result.size != image.size:
+            result = result.resize(image.size, Image.Resampling.LANCZOS)
+        return result
+    finally:
+        del model

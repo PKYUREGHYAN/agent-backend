@@ -1,0 +1,1 @@
+"""HTTP routes for the local image AI service."""

@@ -1,0 +1,143 @@
+
+"""Create a mask for one selected object using Grounding DINO and SAM2."""
+
+import argparse
+import gc
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+from PIL import Image
+from transformers import (
+    AutoModelForZeroShotObjectDetection,
+    AutoProcessor,
+)
+from sam2.build_sam import build_sam2
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CHECKPOINT = (
+    PROJECT_ROOT / "grounded_sam" / "checkpoints" / "sam2.1_hiera_tiny.pt"
+)
+DINO_MODEL_ID = os.getenv(
+    "DINO_MODEL_ID",
+    "IDEA-Research/grounding-dino-tiny",
+)
+
+
+def create_mask(image_path: Path, target: str, output_path: Path) -> None:
+    if not image_path.is_file():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+
+    if not CHECKPOINT.is_file():
+        raise FileNotFoundError(f"SAM2 checkpoint not found: {CHECKPOINT}")
+
+    target = target.strip().lower()
+    if not target:
+        raise ValueError("Target must not be empty.")
+
+    image = Image.open(image_path).convert("RGB")
+    image_array = np.asarray(image)
+
+    # Load Grounding DINO and find objects matching the user's target.
+    processor = AutoProcessor.from_pretrained(DINO_MODEL_ID)
+    detector = AutoModelForZeroShotObjectDetection.from_pretrained(
+        DINO_MODEL_ID
+    )
+    detector.eval()
+
+    inputs = processor(
+        images=image,
+        text=f"{target} .",
+        return_tensors="pt",
+    )
+
+    with torch.inference_mode():
+        outputs = detector(**inputs)
+
+    detections = processor.post_process_grounded_object_detection(
+        outputs,
+        inputs.input_ids,
+        threshold=0.35,
+        text_threshold=0.25,
+        target_sizes=[(image.height, image.width)],
+    )[0]
+
+    boxes = detections["boxes"].cpu().numpy()
+    scores = detections["scores"].cpu().numpy()
+
+    del processor, detector, inputs, outputs, detections
+    gc.collect()
+
+    if len(boxes) == 0:
+        raise ValueError(
+            f"No object matching '{target}' was detected."
+        )
+
+    # IMPORTANT: select one detection instead of combining every box.
+    selected_index = int(np.argmax(scores))
+    selected_box = boxes[selected_index:selected_index + 1]
+
+    import sam2
+
+    sam2_root = Path(sam2.__file__).resolve().parent
+    config_path = (
+        sam2_root / "configs" / "sam2.1" / "sam2.1_hiera_t.yaml"
+    )
+
+    if not config_path.is_file():
+        raise FileNotFoundError(
+            f"SAM2 config not found: {config_path}"
+        )
+
+    sam_model = build_sam2(
+        str(config_path),
+        str(CHECKPOINT),
+        device="cpu",
+    )
+    predictor = SAM2ImagePredictor(sam_model)
+    predictor.set_image(image_array)
+
+    masks, mask_scores, _ = predictor.predict(
+        box=selected_box,
+        multimask_output=True,
+    )
+
+    best_mask_index = int(np.argmax(mask_scores))
+    mask = masks[best_mask_index].astype(np.uint8) * 255
+
+    mask_fraction = float(np.count_nonzero(mask)) / mask.size
+    if mask_fraction <= 0:
+        raise ValueError("SAM2 produced an empty mask.")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(mask, mode="L").save(output_path)
+
+    print(
+        f"SUCCESS: target={target}; "
+        f"dino_score={float(scores[selected_index]):.3f}; "
+        f"mask_area={mask_fraction:.4f}; "
+        f"output={output_path}"
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--image", required=True, type=Path)
+    parser.add_argument("--target", required=True)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+
+    try:
+        create_mask(args.image, args.target, args.output)
+        return 0
+    except Exception as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
