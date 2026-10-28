@@ -1,0 +1,42 @@
+
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+
+# Node.js dependencies and build output
+node_modules/
+
+# Python virtual environments and cache
+.venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+
+# AI model weights and checkpoints
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# Generated images and temporary output
+data/cleaned/
+lama_output/
+*.tmp
+
+# Logs
+*.log
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Grounded SAM virtual environment
+grounded_sam/Lib/
+grounded_sam/Scripts/
+grounded_sam/Include/
+grounded_sam/pyvenv.cfg
+grounded_sam/checkpoints/
