@@ -49,3 +49,7 @@ grounded_sam/checkpoints/
 
 # Sibling frontend mounted for production serve
 frontend
+
+# Local editor/backup junk
+*.bak
+*.backup
