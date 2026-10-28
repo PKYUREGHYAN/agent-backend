@@ -46,3 +46,6 @@ grounded_sam/checkpoints/
 # SQLite runtime sidecar files
 *.sqlite-shm
 *.sqlite-wal
+
+# Sibling frontend mounted for production serve
+frontend

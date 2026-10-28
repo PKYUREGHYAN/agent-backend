@@ -13,18 +13,11 @@ from PIL import Image, ImageFilter
 
 from services.config import SAM2_CHECKPOINT
 from services.image_service_errors import ImageProcessingError
+from services.python_paths import GROUNDED_SAM_PYTHON, PROJECT_ROOT
 from services.runtime_service import require_removal_memory
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = AI_ROOT.parent
-
-GROUNDED_SAM_PYTHON = Path(
-    os.getenv(
-        "GROUNDED_SAM_PYTHON",
-        str(PROJECT_ROOT / "grounded_sam" / "Scripts" / "python.exe"),
-    )
-)
 
 RUNNER_PATH = AI_ROOT / "services" / "grounded_sam_runner.py"
 

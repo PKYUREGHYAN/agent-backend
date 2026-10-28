@@ -10,8 +10,18 @@ const listAmRoutes = require("./routes/listAmRoutes.cjs");
 const agencyRoutes = require("./routes/agencyRoutes.cjs");
 const adminLockRoutes = require("./routes/adminLockRoutes.cjs");
 const lockMiddleware = require("./middleware/lockMiddleware.cjs");
+const aiRoutes = require("./routes/aiRoutes.cjs");
 
 const app = express();
+
+// Allow /backend/* and /frontend/* aliases (nginx or direct :5000).
+app.use((req, res, next) => {
+    const url = req.url || "";
+    if (url === "/backend" || url.startsWith("/backend/") || url === "/frontend" || url.startsWith("/frontend/")) {
+        req.url = url.replace(/^\/(backend|frontend)/, "") || "/";
+    }
+    return next();
+});
 
 function isAllowedAppOrigin(origin) {
     if (!origin) {
@@ -117,7 +127,7 @@ app.use("/api/admin", adminLockRoutes);
 app.use("/api/telegram", lockMiddleware, telegramRoutes);
 app.use("/api/listam", lockMiddleware, listAmRoutes);
 app.use("/api/agency", lockMiddleware, agencyRoutes);
-
+app.use("/api/ai", aiRoutes);
 
 // ==========================================
 // TEST ROUTE
@@ -142,10 +152,14 @@ app.get("/api/runtime", (req, res) => {
     });
 });
 
-const distDir = path.join(__dirname, "../frontend/dist");
-const distIndex = path.join(distDir, "index.html");
+const distCandidates = [
+    path.join(__dirname, "../frontend/dist"),
+    path.join(__dirname, "../../frontend/dist"),
+];
+const distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, "index.html")));
+const distIndex = distDir ? path.join(distDir, "index.html") : null;
 
-if (process.env.SERVE_FRONTEND === "1" || fs.existsSync(distIndex)) {
+if (distDir && (process.env.SERVE_FRONTEND === "1" || fs.existsSync(distIndex))) {
     app.use(express.static(distDir));
     app.use((req, res, next) => {
         if (req.method !== "GET" || req.path.startsWith("/api")) {

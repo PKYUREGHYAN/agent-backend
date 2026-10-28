@@ -177,13 +177,16 @@ async function fetchHtml(url) {
 function findPython() {
     const candidates = [
         path.join(ROOT, "iopaint", ".venv", "Scripts", "python.exe"),
+        path.join(ROOT, "iopaint", ".venv", "bin", "python"),
         path.join(ROOT, "python_ai", ".venv", "Scripts", "python.exe"),
+        path.join(ROOT, "python_ai", ".venv", "bin", "python"),
+        "python3",
         "python",
         "py",
     ];
 
     return candidates.find((candidate) => {
-        if (candidate.endsWith(".exe")) {
+        if (candidate.includes(`${path.sep}.venv${path.sep}`) || candidate.endsWith(".exe")) {
             return fs.existsSync(candidate);
         }
         const probe = spawnSync(candidate, ["-c", "from PIL import Image"], {

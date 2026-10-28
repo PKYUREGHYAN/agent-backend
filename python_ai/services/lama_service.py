@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -10,18 +9,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from services.python_paths import IOPAINT_PYTHON, PROJECT_ROOT
 from services.runtime_service import get_runtime_profile
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = AI_ROOT.parent
-
-IOPAINT_PYTHON = Path(
-    os.getenv(
-        "IOPAINT_PYTHON",
-        str(PROJECT_ROOT / "iopaint" / ".venv" / "Scripts" / "python.exe"),
-    )
-)
 RUNNER_PATH = AI_ROOT / "services" / "lama_runner.py"
 
 
