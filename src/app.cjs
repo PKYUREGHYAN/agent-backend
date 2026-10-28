@@ -133,10 +133,12 @@ app.use("/api/ai", aiRoutes);
 // TEST ROUTE
 // ==========================================
 
-app.get("/api/runtime", (req, res) => {
+app.get("/api/runtime", async (req, res) => {
     const { getAgencyTelegramConfig } = require("./services/telegramConfig.cjs");
     const { isAppLocked } = require("./services/appLock.cjs");
+    const { getRedisStatus } = require("./services/redis.cjs");
     const agencyTg = getAgencyTelegramConfig();
+    const redis = await getRedisStatus();
     res.json({
         success: true,
         lanIp: lanIPv4(),
@@ -149,6 +151,7 @@ app.get("/api/runtime", (req, res) => {
         agencyBotUsername: agencyTg.botUsername || "",
         directorUsername: agencyTg.directorUsername || "",
         locked: isAppLocked(),
+        redis,
     });
 });
 
