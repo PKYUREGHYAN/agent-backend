@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 
 
@@ -12,6 +13,7 @@ const createAccessToken = (user) => {
         {
             userId: user.id,
             username: user.username,
+            jti: crypto.randomUUID(),
         },
         process.env.JWT_SECRET,
         {
@@ -29,6 +31,7 @@ const createRefreshToken = (user) => {
     return jwt.sign(
         {
             userId: user.id,
+            jti: crypto.randomUUID(),
         },
         process.env.JWT_REFRESH_SECRET,
         {

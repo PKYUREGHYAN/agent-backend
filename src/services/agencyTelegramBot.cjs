@@ -394,7 +394,7 @@ async function handleMessage(message) {
     if (isAppLocked()) {
         await call("sendMessage", {
             chat_id: from.id,
-            text: "Ծրագիրը արգելափակված է Super Admin-ի կողմից։",
+            text: "Ծրագիրը արգելափակված է։",
         });
         return;
     }
@@ -468,7 +468,7 @@ async function handleCallback(query) {
     if (isAppLocked()) {
         await call("sendMessage", {
             chat_id: chatId,
-            text: "Ծրագիրը արգելափակված է Super Admin-ի կողմից։",
+            text: "Ծրագիրը արգելափակված է։",
         });
         return;
     }

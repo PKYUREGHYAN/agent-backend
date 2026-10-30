@@ -11,6 +11,7 @@ const {
 const {
     saveRefreshToken,
     findRefreshToken,
+    markRefreshTokenRotated,
     deleteRefreshToken,
     deleteRefreshTokensByUserId,
 } = require("../services/refreshTokenService.cjs");
@@ -83,6 +84,7 @@ const issueSession = (user) => {
 
     return {
         accessToken,
+        token: accessToken,
         refreshToken,
     };
 };
@@ -424,8 +426,8 @@ const refresh = async (req, res) => {
         // ------------------------------------------
 
         if (
-            decoded.userId !==
-            storedToken.user_id
+            Number(decoded.userId) !==
+            Number(storedToken.user_id)
         ) {
 
             return res.status(401).json({
@@ -448,8 +450,11 @@ const refresh = async (req, res) => {
 
 
         if (
+            Number.isNaN(expiresAt.getTime()) ||
             expiresAt <= new Date()
         ) {
+
+            deleteRefreshToken(refreshToken);
 
             return res.status(401).json({
                 success: false,
@@ -457,6 +462,25 @@ const refresh = async (req, res) => {
                     "Refresh Token-ի ժամկետը լրացել է",
             });
 
+        }
+
+        // A second tab can send the same refresh token while the first
+        // rotation is still being saved. Keep the previous token usable
+        // for a short window so that retry does not log the user out.
+        const refreshReuseGraceMs = 2 * 60 * 1000;
+
+        if (storedToken.rotated_at) {
+            const rotatedAt = new Date(storedToken.rotated_at).getTime();
+            const age = Date.now() - rotatedAt;
+
+            if (Number.isNaN(rotatedAt) || age > refreshReuseGraceMs) {
+                deleteRefreshToken(refreshToken);
+
+                return res.status(401).json({
+                    success: false,
+                    message: "Refresh Token-ը վավեր չէ",
+                });
+            }
         }
 
 
@@ -488,15 +512,6 @@ WHERE id = ?
             });
 
         }
-
-
-        // ------------------------------------------
-        // DELETE OLD REFRESH TOKEN
-        // ------------------------------------------
-
-        deleteRefreshToken(
-            refreshToken
-        );
 
 
         // ------------------------------------------
@@ -541,6 +556,10 @@ WHERE id = ?
             newRefreshTokenExpiresAt
         );
 
+        if (!storedToken.rotated_at) {
+            markRefreshTokenRotated(refreshToken);
+        }
+
 
         // ------------------------------------------
         // RESPONSE
@@ -554,6 +573,8 @@ WHERE id = ?
                 "Token-ները հաջողությամբ թարմացվեցին",
 
             accessToken,
+
+            token: accessToken,
 
             refreshToken:
                 newRefreshToken,
@@ -574,10 +595,15 @@ WHERE id = ?
             error
         );
 
-        return res.status(401).json({
+        const invalidToken =
+            error?.name === "JsonWebTokenError" ||
+            error?.name === "TokenExpiredError";
+
+        return res.status(invalidToken ? 401 : 500).json({
             success: false,
-            message:
-                "Refresh Token-ը վավեր չէ",
+            message: invalidToken
+                ? "Refresh Token-ը վավեր չէ"
+                : "Token-ները չհաջողվեց թարմացնել",
         });
 
     }
@@ -644,7 +670,7 @@ const logout = async (req, res) => {
             });
         }
 
-        if (refreshPayload.userId !== storedRefreshToken.user_id) {
+        if (Number(refreshPayload.userId) !== Number(storedRefreshToken.user_id)) {
             return res.status(401).json({
                 success: false,
                 message: "Refresh Token-ը վավեր չէ",

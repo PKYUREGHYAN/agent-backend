@@ -29,7 +29,7 @@ function lockMiddleware(req, res, next) {
     return res.status(423).json({
         success: false,
         locked: true,
-        message: "Ծրագիրը արգելափակված է Super Admin-ի կողմից",
+        message: "Ծրագիրը արգելափակված է։",
     });
 }
 

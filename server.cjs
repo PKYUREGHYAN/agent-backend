@@ -15,6 +15,14 @@ app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Հեռախոս նույն Wi-Fi-ով՝ ${lanWebOrigin(5173)}`);
 
     try {
+        const { getCatalog } = require("./src/services/packages.cjs");
+        const catalog = getCatalog();
+        console.log(`Agency packages in DB: ${catalog.packages.length}`);
+    } catch (error) {
+        console.log(`Agency catalog seed failed: ${error.message}`);
+    }
+
+    try {
         const redis = await connectRedis();
         console.log(
             redis.available

@@ -126,7 +126,7 @@ async function pollOnce() {
         if (isAppLocked() && message?.chat?.type === "private") {
             await telegramCall("sendMessage", {
                 chat_id: message.chat.id,
-                text: "Ծրագիրը արգելափակված է Super Admin-ի կողմից։",
+                text: "Ծրագիրը արգելափակված է։",
             });
             continue;
         }

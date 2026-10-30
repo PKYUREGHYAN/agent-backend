@@ -1,6 +1,11 @@
 const { getSetting, setSetting } = require("./appSettings.cjs");
 
-const PACKAGES = [
+const CATALOG_SETTING_KEY = "agency_package_catalog";
+const DISCOUNT_SETTING_KEY = "agency_discount_percent";
+const LEGACY_PRICE_SETTING_KEY = "agency_package_prices";
+
+/** Seed once into SQLite; after that catalog lives only in DB. */
+const DEFAULT_PACKAGES = [
     {
         id: "pkg_1",
         listingsCount: 1,
@@ -64,8 +69,77 @@ const PACKAGES = [
     },
 ];
 
+function formatPriceDisplay(priceAMD) {
+    return `${Number(priceAMD).toLocaleString("hy-AM")} դրամ`;
+}
+
+function normalizePackage(pkg) {
+    const listingsCount = Math.max(1, Number(pkg.listingsCount) || 1);
+    const priceAMD = Math.max(0, Math.round(Number(pkg.priceAMD) || 0));
+    const perItem = Math.round(priceAMD / listingsCount);
+
+    return {
+        ...pkg,
+        listingsCount,
+        priceAMD,
+        priceDisplay: formatPriceDisplay(priceAMD),
+        unitPrice: `${perItem} ֏ / հատ`,
+        perItemRu: `${perItem} ֏ за объявление`,
+    };
+}
+
+function getLegacyPriceOverrides() {
+    try {
+        const raw = getSetting(LEGACY_PRICE_SETTING_KEY);
+        if (!raw) {
+            return {};
+        }
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function seedCatalogIntoDb() {
+    const legacy = getLegacyPriceOverrides();
+    const seeded = DEFAULT_PACKAGES.map((pkg) => {
+        const override = Number(legacy[pkg.id]);
+        const withPrice = Number.isFinite(override) && override >= 0
+            ? { ...pkg, priceAMD: Math.round(override) }
+            : pkg;
+        return normalizePackage(withPrice);
+    });
+
+    setSetting(CATALOG_SETTING_KEY, JSON.stringify(seeded));
+    return seeded;
+}
+
+function readCatalogRows() {
+    const raw = getSetting(CATALOG_SETTING_KEY);
+    if (!raw) {
+        return seedCatalogIntoDb();
+    }
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed) || !parsed.length) {
+            return seedCatalogIntoDb();
+        }
+        return parsed.map(normalizePackage);
+    } catch {
+        return seedCatalogIntoDb();
+    }
+}
+
+function writeCatalogRows(rows) {
+    const normalized = rows.map(normalizePackage);
+    setSetting(CATALOG_SETTING_KEY, JSON.stringify(normalized));
+    return normalized;
+}
+
 function getDiscountPercent() {
-    const parsed = Number(getSetting("agency_discount_percent") || 0);
+    const parsed = Number(getSetting(DISCOUNT_SETTING_KEY) || 0);
     if (!Number.isFinite(parsed)) {
         return 0;
     }
@@ -74,15 +148,37 @@ function getDiscountPercent() {
 
 function setDiscountPercent(value) {
     const percent = Math.max(0, Math.min(90, Math.round(Number(value) || 0)));
-    setSetting("agency_discount_percent", String(percent));
+    setSetting(DISCOUNT_SETTING_KEY, String(percent));
     return percent;
+}
+
+function setPackagePrices(prices) {
+    const next = readCatalogRows().map((pkg) => {
+        const raw = prices?.[pkg.id];
+        if (raw == null || raw === "") {
+            return pkg;
+        }
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value < 0) {
+            return pkg;
+        }
+        return normalizePackage({ ...pkg, priceAMD: Math.round(value) });
+    });
+
+    writeCatalogRows(next);
+    // Keep legacy key in sync for older readers / migrations
+    const legacyMap = Object.fromEntries(next.map((pkg) => [pkg.id, pkg.priceAMD]));
+    setSetting(LEGACY_PRICE_SETTING_KEY, JSON.stringify(legacyMap));
+    return getCatalog();
 }
 
 function getCatalog() {
     const discountPercent = getDiscountPercent();
+    const packages = readCatalogRows();
+
     return {
         discountPercent,
-        packages: PACKAGES.map((pkg) => ({
+        packages: packages.map((pkg) => ({
             ...pkg,
             finalPriceAMD: discountPercent > 0
                 ? Math.round(pkg.priceAMD * (1 - discountPercent / 100))
@@ -92,13 +188,14 @@ function getCatalog() {
 }
 
 function findPackage(id) {
-    return PACKAGES.find((pkg) => pkg.id === id) || null;
+    return readCatalogRows().find((item) => item.id === id) || null;
 }
 
 module.exports = {
-    PACKAGES,
+    PACKAGES: DEFAULT_PACKAGES,
     getDiscountPercent,
     setDiscountPercent,
+    setPackagePrices,
     getCatalog,
     findPackage,
 };

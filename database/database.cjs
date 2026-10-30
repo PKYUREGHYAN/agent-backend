@@ -36,9 +36,17 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     token_hash TEXT NOT NULL UNIQUE,
     expires_at DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    rotated_at TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 `);
+
+const refreshColumns = db.prepare("PRAGMA table_info(refresh_tokens)").all()
+    .map((column) => column.name);
+
+if (!refreshColumns.includes("rotated_at")) {
+    db.exec("ALTER TABLE refresh_tokens ADD COLUMN rotated_at TEXT");
+}
 
 const roleColumn = db.prepare("PRAGMA table_info(users)").all()
     .some((column) => column.name === "role");

@@ -1,12 +1,14 @@
 const {
     listAgents,
     createAgent,
+    deleteAgent,
     requestKeys,
     loginWithFirstId,
     consumeSearch,
     activatePackage,
     cancelPackage,
     saveListing,
+    getListingByItemId,
     createShareLink,
     getShareByToken,
     listShareLinks,
@@ -14,7 +16,12 @@ const {
 } = require("../services/agencyService.cjs");
 const { webShareUrl, appShareUrl } = require("../utils/lanAddress.cjs");
 const { maskEmail } = require("../services/mailService.cjs");
-const { getCatalog, setDiscountPercent, findPackage } = require("../services/packages.cjs");
+const {
+    getCatalog,
+    setDiscountPercent,
+    setPackagePrices,
+    findPackage,
+} = require("../services/packages.cjs");
 
 function withShareUrls(share) {
     if (!share?.token) {
@@ -111,6 +118,17 @@ const addAgencyAgent = (req, res) => {
     return res.status(200).json({ success: true, user: agent });
 };
 
+const deleteAgencyAgent = (req, res) => {
+    const userId = req.body?.userId || req.params?.id;
+    const removed = deleteAgent(userId);
+
+    if (!removed) {
+        return res.status(404).json({ success: false, message: "Օգտատերը չի գտնվել" });
+    }
+
+    return res.status(200).json({ success: true, message: "Օգտատերը հեռացվեց" });
+};
+
 const readAgencyCatalog = (_req, res) => {
     return res.status(200).json({ success: true, ...getCatalog() });
 };
@@ -118,6 +136,11 @@ const readAgencyCatalog = (_req, res) => {
 const saveAgencyDiscount = (req, res) => {
     const percent = setDiscountPercent(req.body?.percent);
     return res.status(200).json({ success: true, ...getCatalog(), discountPercent: percent });
+};
+
+const saveAgencyPrices = (req, res) => {
+    const catalog = setPackagePrices(req.body?.prices || req.body || {});
+    return res.status(200).json({ success: true, ...catalog });
 };
 
 const activateAgencyPackage = (req, res) => {
@@ -141,12 +164,20 @@ const cancelAgencyPackage = (req, res) => {
 
 const saveAgencyListing = (req, res) => {
     const listing = req.body?.listing;
-    if (!listing) {
+    if (!listing?.id) {
         return res.status(400).json({ success: false, message: "Տվյալ չկա" });
     }
 
-    saveListing(listing.id, req.body?.email, listing);
-    return res.status(200).json({ success: true });
+    const rowId = saveListing(listing.id, req.body?.email, listing);
+    return res.status(200).json({ success: true, id: rowId });
+};
+
+const readAgencyListing = (req, res) => {
+    const listing = getListingByItemId(req.params.itemId, req.query?.email);
+    if (!listing) {
+        return res.status(404).json({ success: false, message: "Հայտարարությունը չի գտնվել բազայում" });
+    }
+    return res.status(200).json({ success: true, listing });
 };
 
 const createShare = (req, res) => {
@@ -216,11 +247,14 @@ module.exports = {
     meAgency,
     readAgencyCatalog,
     saveAgencyDiscount,
+    saveAgencyPrices,
     listAgencyAgents,
     addAgencyAgent,
+    deleteAgencyAgent,
     activateAgencyPackage,
     cancelAgencyPackage,
     saveAgencyListing,
+    readAgencyListing,
     createShare,
     readShare,
     adminShareList,

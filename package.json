@@ -11,6 +11,7 @@
     "desktop": "node desktop/install-electron.cjs && electron .",
     "app": "npm run desktop",
     "start": "node server.cjs",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-agent.ps1",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

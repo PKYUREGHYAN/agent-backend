@@ -47,7 +47,8 @@ const findRefreshToken = (refreshToken) => {
                 user_id,
                 token_hash,
                 expires_at,
-                created_at
+                created_at,
+                rotated_at
             FROM refresh_tokens
             WHERE token_hash = ?
         `)
@@ -58,6 +59,18 @@ const findRefreshToken = (refreshToken) => {
 // ==========================================
 // DELETE REFRESH TOKEN
 // ==========================================
+
+const markRefreshTokenRotated = (refreshToken) => {
+    const tokenHash = hashToken(refreshToken);
+
+    db.prepare(`
+        UPDATE refresh_tokens
+        SET rotated_at = ?
+        WHERE token_hash = ?
+          AND rotated_at IS NULL
+    `).run(new Date().toISOString(), tokenHash);
+};
+
 
 const deleteRefreshToken = (refreshToken) => {
 
@@ -93,6 +106,7 @@ const deleteRefreshTokensByUserId = (userId) => {
 module.exports = {
     saveRefreshToken,
     findRefreshToken,
+    markRefreshTokenRotated,
     deleteRefreshToken,
     deleteRefreshTokensByUserId,
 };

@@ -164,6 +164,21 @@ function createAgent({ name, email, packageInfo }) {
     );
 }
 
+function deleteAgent(userId) {
+    const id = Number(userId);
+    if (!id) {
+        return false;
+    }
+
+    const row = db.prepare("SELECT id FROM agency_agents WHERE id = ?").get(id);
+    if (!row) {
+        return false;
+    }
+
+    db.prepare("DELETE FROM agency_agents WHERE id = ?").run(id);
+    return true;
+}
+
 async function notifyDirectorAboutKeys(agent) {
     try {
         const { getAgencyTelegramConfig } = require("./telegramConfig.cjs");
@@ -289,10 +304,67 @@ function cancelPackage(agentId) {
 }
 
 function saveListing(itemId, agentEmail, payload) {
-    db.prepare(`
+    const cleanId = String(itemId || "").trim();
+    const email = agentEmail ? String(agentEmail).trim().toLowerCase() : null;
+    const json = JSON.stringify(payload || {});
+
+    const existing = email
+        ? db.prepare(`
+            SELECT id FROM agency_listings
+            WHERE item_id = ? AND LOWER(COALESCE(agent_email, '')) = ?
+            ORDER BY id DESC LIMIT 1
+        `).get(cleanId, email)
+        : db.prepare(`
+            SELECT id FROM agency_listings
+            WHERE item_id = ?
+            ORDER BY id DESC LIMIT 1
+        `).get(cleanId);
+
+    if (existing?.id) {
+        db.prepare(`
+            UPDATE agency_listings
+            SET payload_json = ?, agent_email = COALESCE(?, agent_email)
+            WHERE id = ?
+        `).run(json, email, existing.id);
+        return existing.id;
+    }
+
+    const info = db.prepare(`
         INSERT INTO agency_listings (item_id, agent_email, payload_json)
         VALUES (?, ?, ?)
-    `).run(String(itemId), agentEmail || null, JSON.stringify(payload));
+    `).run(cleanId, email, json);
+
+    return info.lastInsertRowid;
+}
+
+function getListingByItemId(itemId, agentEmail = null) {
+    const cleanId = String(itemId || "").trim();
+    if (!cleanId) {
+        return null;
+    }
+
+    const email = agentEmail ? String(agentEmail).trim().toLowerCase() : null;
+    const row = email
+        ? db.prepare(`
+            SELECT * FROM agency_listings
+            WHERE item_id = ? AND LOWER(COALESCE(agent_email, '')) = ?
+            ORDER BY id DESC LIMIT 1
+        `).get(cleanId, email)
+        : db.prepare(`
+            SELECT * FROM agency_listings
+            WHERE item_id = ?
+            ORDER BY id DESC LIMIT 1
+        `).get(cleanId);
+
+    if (!row) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(row.payload_json || "{}");
+    } catch {
+        return null;
+    }
 }
 
 function createShareLink({ kind, listing, agentEmail }) {
@@ -404,12 +476,14 @@ function renewShareLink(id) {
 module.exports = {
     listAgents,
     createAgent,
+    deleteAgent,
     requestKeys,
     loginWithFirstId,
     consumeSearch,
     activatePackage,
     cancelPackage,
     saveListing,
+    getListingByItemId,
     createShareLink,
     getShareByToken,
     listShareLinks,

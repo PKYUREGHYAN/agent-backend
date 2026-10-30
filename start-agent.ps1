@@ -1,37 +1,38 @@
-
 $ErrorActionPreference = "Stop"
 
 $Root = $PSScriptRoot
 $PythonAI = Join-Path $Root "python_ai"
-$Frontend = Join-Path $Root "frontend"
+$FrontendCandidates = @(
+    (Join-Path $Root "frontend"),
+    (Join-Path (Split-Path $Root -Parent) "agent1_frontend\frontend")
+)
+$Frontend = $FrontendCandidates | Where-Object { Test-Path (Join-Path $_ "package.json") } | Select-Object -First 1
 
 $NodeServer = Join-Path $Root "server.cjs"
 $PythonAIStartup = Join-Path $PythonAI "start-ai.ps1"
-$FrontendPackage = Join-Path $Frontend "package.json"
 
 Write-Host ""
 Write-Host "====================================" -ForegroundColor Cyan
-Write-Host "       AGENT_1 STARTUP" -ForegroundColor Cyan
+Write-Host "       AGENT 1 - one terminal" -ForegroundColor Cyan
 Write-Host "====================================" -ForegroundColor Cyan
 
 if (!(Test-Path $NodeServer)) {
-    throw "Չգտնվեց server.cjs ֆայլը։"
+    throw "server.cjs not found"
 }
 
 if (!(Test-Path $PythonAIStartup)) {
-    throw "Չգտնվեց Python AI start script-ը։"
+    throw "python_ai/start-ai.ps1 not found"
 }
 
-if (!(Test-Path $FrontendPackage)) {
-    throw "Չգտնվեց frontend/package.json ֆայլը։"
+if (-not $Frontend) {
+    throw "frontend/package.json not found (checked agent_1\frontend and ..\agent1_frontend\frontend)"
 }
 
 if (!(Test-Path (Join-Path $Frontend "node_modules"))) {
-    Write-Host "Frontend dependencies-ը տեղադրված չեն։" -ForegroundColor Red
-    Write-Host "Բացիր առանձին տերմինալ և կատարիր՝"
+    Write-Host "Frontend dependencies missing. Run:" -ForegroundColor Red
     Write-Host "cd `"$Frontend`""
     Write-Host "npm install"
-    throw "Կանգնեցվեց։ Տեղադրիր dependencies-ը և կրկին փորձիր։"
+    throw "Stopped"
 }
 
 $LanIp = (
@@ -43,34 +44,20 @@ $LanIp = (
         Select-Object -First 1 -ExpandProperty IPAddress
 )
 
-Write-Host "`n[1/3] Starting Node.js Backend..." -ForegroundColor Yellow
-
-Start-Process `
-    -FilePath "node" `
-    -ArgumentList "server.cjs" `
-    -WorkingDirectory $Root
-
-Write-Host "[2/3] Starting Python AI API..." -ForegroundColor Yellow
-
-Start-Process `
-    -FilePath "powershell.exe" `
-    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PythonAIStartup`"" `
-    -WorkingDirectory $PythonAI
-
-Write-Host "[3/3] Starting Frontend..." -ForegroundColor Yellow
-
-Start-Process `
-    -FilePath "npm.cmd" `
-    -ArgumentList "run dev -- --host" `
-    -WorkingDirectory $Frontend
-
-Write-Host "`nStartup commands sent." -ForegroundColor Green
-Write-Host "Համակարգիչ՝  http://127.0.0.1:5173"
+Write-Host "Frontend: $Frontend" -ForegroundColor DarkGray
+Write-Host "PC:       http://127.0.0.1:5173"
 if ($LanIp) {
-    Write-Host "Հեռախոս (նույն Wi-Fi)՝  http://${LanIp}:5173" -ForegroundColor Cyan
-} else {
-    Write-Host "Հեռախոսի IP-ն չգտնվեց։ Տես `ipconfig` և բացիր http://<քո-IP>:5173"
+    Write-Host "Phone:    http://${LanIp}:5173" -ForegroundColor Cyan
 }
-Write-Host "Backend:   http://0.0.0.0:5000"
-Write-Host "Python AI: http://0.0.0.0:8000"
-Write-Host "`nՀեռախոսում բացիր նույն Wi-Fi-ով։ Windows Firewall-ը թույլ տուր 5173, 5000, 8000 պորտերին։"
+Write-Host "API:      http://127.0.0.1:5000"
+Write-Host "Python:   http://127.0.0.1:8000"
+Write-Host ""
+Write-Host "Stop with Ctrl+C" -ForegroundColor Yellow
+Write-Host ""
+
+$env:FORCE_COLOR = "1"
+
+npx --yes concurrently -k -n api,ai,web -c blue,magenta,green `
+    "node `"$NodeServer`"" `
+    "powershell -NoProfile -ExecutionPolicy Bypass -File `"$PythonAIStartup`"" `
+    "npm --prefix `"$Frontend`" run dev -- --host"
