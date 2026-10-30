@@ -157,21 +157,38 @@ function parseTitle(html) {
     );
 }
 
+function isCloudflareChallenge(html) {
+    const head = String(html || "").slice(0, 4000);
+    return /Just a moment/i.test(head) || /challenge-error-text|cf-challenge/i.test(head);
+}
+
 async function fetchHtml(url) {
     const readerUrl = `https://r.jina.ai/${url}`;
-    const response = await fetch(readerUrl, {
-        headers: {
-            "User-Agent": "Mozilla/5.0 Agent1",
-            "X-Return-Format": "html",
-            Accept: "text/html",
-        },
-    });
+    let lastError = new Error("List.am հայտարարությունը չհաջողվեց բացել");
 
-    if (!response.ok) {
-        throw new Error("List.am հայտարարությունը չհաջողվեց բացել");
+    for (const engine of ["direct", "curl"]) {
+        const response = await fetch(readerUrl, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 Agent1",
+                "X-Return-Format": "html",
+                "X-Engine": engine,
+                Accept: "text/html",
+            },
+        });
+
+        if (!response.ok) {
+            continue;
+        }
+
+        const html = await response.text();
+        if (!isCloudflareChallenge(html)) {
+            return html;
+        }
+
+        lastError = new Error("List.am հայտարարությունը չհաջողվեց բացել");
     }
 
-    return response.text();
+    throw lastError;
 }
 
 function findPython() {
