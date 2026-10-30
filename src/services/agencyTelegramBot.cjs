@@ -128,6 +128,40 @@ async function sendPackageCatalog(from) {
     });
 }
 
+function directorContact() {
+    const config = getAgencyTelegramConfig();
+    const username = config.directorUsername;
+    const url = directorUrl() || (username ? `https://t.me/${username}` : "");
+    return { url, username };
+}
+
+async function sendDirectorRedirect(chatId, pkg) {
+    const { url, username } = directorContact();
+    const price = pkg.finalPriceAMD ?? pkg.priceAMD;
+    const who = username ? `@${username}` : "տնօրենին";
+    const lines = [
+        `Ընտրել եք ${pkg.name} (${pkg.listingsCount} հայտարարություն, ${price} դրամ)։`,
+        `Փաթեթը ակտիվացնելու համար գրեք ${who}։`,
+    ];
+
+    if (!url) {
+        lines.push("Տնօրենի Telegram-ը դեռ կարգավորված չէ։");
+    }
+
+    const payload = {
+        chat_id: chatId,
+        text: lines.join("\n"),
+    };
+
+    if (url) {
+        payload.reply_markup = {
+            inline_keyboard: [[{ text: `Գրել ${who}`, url }]],
+        };
+    }
+
+    await call("sendMessage", payload);
+}
+
 async function handlePackageSelect(from, pkgId) {
     const pkg = getCatalog().packages.find((item) => item.id === pkgId) || findPackage(pkgId);
     const agent = toAgent(findByTelegramId(from.id));
@@ -138,22 +172,12 @@ async function handlePackageSelect(from, pkgId) {
     }
 
     try {
-        const sent = await sendPackageRequestToDirector({ agent, pkg, from });
-        if (sent.ok) {
-            await call("sendMessage", {
-                chat_id: from.id,
-                text: "Հաղորդագրությունն ուղարկվեց տնօրենին։",
-            });
-            return;
-        }
+        await sendPackageRequestToDirector({ agent, pkg, from });
     } catch (error) {
         console.error("Director notify:", error.message);
     }
 
-    await call("sendMessage", {
-        chat_id: from.id,
-        text: "Տնօրենը դեռ չի բացել այս բոտը։ Թող մեկ անգամ սեղմի Start՝ @Agent1AgencyBot",
-    });
+    await sendDirectorRedirect(from.id, pkg);
 }
 
 function actionKeyboard(jobId) {
