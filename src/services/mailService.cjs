@@ -1,29 +1,54 @@
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 
-function getMailTransport() {
+function mailAccount() {
     const user = String(process.env.SMTP_USER || process.env.SUPER_ADMIN_EMAIL || "").trim();
-    const pass = String(process.env.SMTP_PASS || "").trim();
+    const pass = String(process.env.SMTP_PASS || "").trim().replace(/^["']|["']$/g, "");
     const host = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
-    const port = Number(process.env.SMTP_PORT || 587);
 
     if (!user || !pass) {
         throw new Error("SMTP-ն կարգավորված չէ");
     }
 
-    // DigitalOcean often blocks outbound 587/465 — keep timeouts short so UI does not hang.
-    return nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-        connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 5000),
-        greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 5000),
-        socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 10000),
-        tls: {
-            servername: host,
-        },
-    });
+    return { user, pass, host };
+}
+
+function smtpPorts() {
+    const preferred = Number(process.env.SMTP_PORT || 587);
+    return [...new Set([preferred, 587, 465].filter((port) => port > 0))];
+}
+
+async function sendMail(message) {
+    const { user, pass, host } = mailAccount();
+    let lastError;
+
+    for (const port of smtpPorts()) {
+        const transport = nodemailer.createTransport({
+            host,
+            port,
+            secure: port === 465,
+            auth: { user, pass },
+            connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 15000),
+            greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 15000),
+            socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 20000),
+            tls: {
+                servername: host,
+            },
+        });
+
+        try {
+            await transport.sendMail({
+                ...message,
+                from: message.from || `Agent 1 <${user}>`,
+            });
+            return;
+        } catch (error) {
+            lastError = error;
+            console.error(`SMTP ${host}:${port} failed:`, error.message);
+        }
+    }
+
+    throw lastError || new Error("Gmail-ով նամակ ուղարկելը չհաջողվեց");
 }
 
 function maskEmail(email) {
@@ -39,11 +64,7 @@ function maskEmail(email) {
 }
 
 async function sendAgencyKeysEmail(to, { firstId, secondId }) {
-    const from = String(process.env.SMTP_USER || process.env.SUPER_ADMIN_EMAIL || "").trim();
-    const transport = getMailTransport();
-
-    await transport.sendMail({
-        from: `Agent 1 <${from}>`,
+    await sendMail({
         to,
         subject: "Agent 1 — ձեր մուտքի կոդերը",
         text:
@@ -64,11 +85,10 @@ async function sendAgencyKeysEmail(to, { firstId, secondId }) {
 }
 
 async function sendResetCodeEmail(to, code) {
-    const from = String(process.env.SMTP_USER || process.env.SUPER_ADMIN_EMAIL || "").trim();
-    const transport = getMailTransport();
+    const { user } = mailAccount();
 
-    await transport.sendMail({
-        from: `Agent 1 Houses <${from}>`,
+    await sendMail({
+        from: `Agent 1 Houses <${user}>`,
         to,
         subject: "Գաղտնաբառի փոփոխման կոդ",
         text:

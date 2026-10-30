@@ -50,9 +50,8 @@ const requestAgencyKeys = async (req, res) => {
         const result = await requestKeys(email);
         return res.status(200).json({
             success: true,
-            delivery: result.delivery,
-            firstId: result.agent?.firstId || null,
-            message: result.message || `Կոդերը ուղարկվեցին ${maskEmail(email)} հասցեին։`,
+            delivery: "email",
+            message: result.message || `Կոդերը ուղարկվեցին ${maskEmail(email)} հասցեին։ Բացեք Gmail-ը։`,
         });
     } catch (error) {
         console.error("Agency keys error:", error);

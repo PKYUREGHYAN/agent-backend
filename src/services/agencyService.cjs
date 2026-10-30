@@ -179,42 +179,6 @@ function deleteAgent(userId) {
     return true;
 }
 
-async function notifyDirectorAboutKeys(agent) {
-    try {
-        const { getAgencyTelegramConfig } = require("./telegramConfig.cjs");
-        const { getSetting } = require("./appSettings.cjs");
-        const config = getAgencyTelegramConfig();
-        const chatId =
-            config.directorChatId ||
-            String(getSetting("agency_director_chat_id") || "").trim();
-
-        if (!config.botToken || !chatId) {
-            return false;
-        }
-
-        const response = await fetch(
-            `https://api.telegram.org/bot${config.botToken}/sendMessage`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    text:
-                        `Agent 1 — նոր գործակալի կոդեր\n` +
-                        `Email՝ ${agent.email}\n` +
-                        `1-ին ID՝ ${agent.firstId}\n` +
-                        `2-րդ ID՝ ${agent.secondId}`,
-                }),
-                signal: AbortSignal.timeout(8000),
-            }
-        );
-        return response.ok;
-    } catch (error) {
-        console.error("Agency keys telegram notify:", error.message);
-        return false;
-    }
-}
-
 async function requestKeys(email) {
     const cleanEmail = String(email || "").trim().toLowerCase();
     let agent = toAgent(findByEmail(cleanEmail));
@@ -223,28 +187,16 @@ async function requestKeys(email) {
         agent = createAgent({ email: cleanEmail, name: cleanEmail.split("@")[0] });
     }
 
-    try {
-        await sendAgencyKeysEmail(cleanEmail, {
-            firstId: agent.firstId,
-            secondId: agent.secondId,
-        });
-        return {
-            agent,
-            delivery: "email",
-            message: `Կոդերը ուղարկվեցին ${cleanEmail.replace(/^(.{1}).*(@.*)$/, "$1***$2")} հասցեին։ Բացեք Gmail-ը և 1-ին կոդը գրեք այստեղ։`,
-        };
-    } catch (error) {
-        console.error("Agency keys email failed:", error.message || error);
-        const telegramOk = await notifyDirectorAboutKeys(agent);
-        return {
-            agent,
-            delivery: telegramOk ? "telegram-director" : "local",
-            message:
-                `Gmail-ը սերվերից հասանելի չէ։ Ձեր 1-ին կոդը՝ ${agent.firstId}։ ` +
-                `Գրեք այն «ВВЕСТИ КЛЮЧ» դաշտում։` +
-                (telegramOk ? " Կոդերը նաև ուղարկվեցին տնօրենի Telegram-ին։" : ""),
-        };
-    }
+    await sendAgencyKeysEmail(cleanEmail, {
+        firstId: agent.firstId,
+        secondId: agent.secondId,
+    });
+
+    const masked = cleanEmail.replace(/^(.{1}).*(@.*)$/, "$1***$2");
+    return {
+        delivery: "email",
+        message: `Կոդերը ուղարկվեցին ${masked} հասցեին։ Բացեք Gmail-ը և 1-ին կոդը գրեք վերևի դաշտում։`,
+    };
 }
 
 function loginWithFirstId(firstId) {
